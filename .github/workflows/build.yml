@@ -1,0 +1,63 @@
+name: build
+
+on:
+  repository_dispatch:
+    types: [build-on-demand]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout ZeroTierFix
+        uses: actions/checkout@v4
+        with:
+          repository: "kaaass/ZerotierFix"
+          path: "ZerotierFix"
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: "ZeroTierFix-Build"
+      - name: Do something
+        run: |
+          export version=$(curl "https://api.github.com/repos/zerotier/ZeroTierOne/releases/latest" | jq -r '.name')
+          export ver=${version//./}
+          echo "corever=$ver" >> $GITHUB_ENV
+          cd ZerotierFix/app
+          sed -r -i "s/versionName \"(.*?)\"/versionName \"\1_$ver\"/g" build.gradle
+          cd ..
+          rm -rf externals
+          mkdir externals
+      - name: Checkout ZeroTierOne
+        uses: actions/checkout@v4
+        with:
+          repository: "zerotier/ZeroTierOne"
+          path: "ZerotierFix/externals/core"
+          ref: "dev"
+      - name: Do something else
+        run: |
+          cd ZerotierFix/externals/core/java
+          rm CMakeLists.txt
+          cp ../../../../ZeroTierFix-Build/CMakeLists.txt .
+          cd ../../../../
+      - name: Build APK
+        uses: sparkfabrik/android-build-action@v1.5.0
+        with:
+          project-path: ZerotierFix
+          output-path: ZerotierFix-${{ env.corever }}.apk
+          gradle-task: assemble
+          ruby-version: "3.3.0"
+      - name: Sign APK
+        id: sign_app
+        uses: noriban/sign-android-release@v5.1
+        with:
+          releaseDirectory: .
+          signingKeyBase64: ${{ secrets.KEYSTORE }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          alias: ${{ secrets.KEYSTORE_ALIAS }}
+      - name: Upload apk
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZerotierFix-${{ env.corever }}
+          path: ${{ steps.sign_app.outputs.signedReleaseFile }}
