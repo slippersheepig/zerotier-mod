@@ -40,7 +40,7 @@ jobs:
         with:
           repository: "zerotier/ZeroTierOne"
           path: "ZerotierFix/externals/core"
-          ref: "dev"
+          ref: "main"
       - name: Do something else
         run: |
           cd ZerotierFix/externals/core/java
