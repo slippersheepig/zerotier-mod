@@ -1,36 +1,42 @@
 name: Build & Release APK
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
   repository_dispatch:
     types: [build-on-demand]
   push:
     tags:
       - 'v*.*.*'
 
-env:
-  ABIS: armeabi-v7a,arm64-v8a
-
 jobs:
   build:
-    name: Build for ABIs & Sign
+    name: Build & Sign APK
     runs-on: ubuntu-latest
     outputs:
-      abis: ${{ env.ABIS }}
+      corever: ${{ env.corever }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout App code
+        uses: actions/checkout@v4
+        with:
+          repository: kaaass/ZerotierFix
+          path: ZerotierFix
 
-      - name: Setup JDK
+      - name: Checkout build scripts
+        uses: actions/checkout@v4
+        with:
+          path: ZerotierFix-Build
+
+      - name: Setup Java JDK 11
         uses: actions/setup-java@v3
         with:
           distribution: temurin
           java-version: '11'
           cache: gradle
 
-      - name: Grant gradlew permission
-        run: chmod +x ./ZerotierFix/gradlew
+      - name: Make gradlew executable
+        run: chmod +x ZerotierFix/gradlew
 
-      - name: Fetch latest core version
+      - name: Fetch ZeroTier core version
         id: ver
         run: |
           version=$(curl -s https://api.github.com/repos/zerotier/ZeroTierOne/releases/latest | jq -r '.name')
@@ -38,47 +44,46 @@ jobs:
           echo "corever=$ver" >> $GITHUB_ENV
           echo "::set-output name=corever::$ver"
 
-      - name: Patch versionName in Android
+      - name: Patch versionName
         run: |
           cd ZerotierFix/app
           sed -r -i "s/versionName \"(.*?)\"/versionName \"\1_${{ env.corever }}\"/g" build.gradle
 
-      - name: Prepare core source
+      - name: Prepare core directory
         run: |
           rm -rf ZerotierFix/externals
           mkdir -p ZerotierFix/externals/core
-
-      - name: Clone ZeroTier Core
+      - name: Checkout core source
         uses: actions/checkout@v4
         with:
           repository: zerotier/ZeroTierOne
           path: ZerotierFix/externals/core
           ref: dev
-
-      - name: Replace CMakeLists
+      - name: Replace CMakeLists.txt
         run: |
-          cp ZeroTierFix-Build/CMakeLists.txt ZerotierFix/externals/core/java/CMakeLists.txt
+          cp ZerotierFix-Build/CMakeLists.txt ZerotierFix/externals/core/java/CMakeLists.txt
 
-      - name: Build & sign for each ABI
+      - name: Build Release APK
         run: |
-          mkdir -p output
-          for abi in ${ABIS//,/ }; do
-            ./ZerotierFix/gradlew assembleRelease -PabiFilter=$abi
-            cp ZerotierFix/app/build/outputs/apk/release/app-release.apk output/ZerotierFix-${{ env.corever }}-$abi.apk
-            apksigner sign \
-              --ks <(echo "${{ secrets.KEYSTORE }}" | base64 -d) \
-              --ks-key-alias "${{ secrets.KEYSTORE_ALIAS }}" \
-              --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
-              --key-pass pass:${{ secrets.KEY_PASSWORD }} \
-              --out output/ZerotierFix-${{ env.corever }}-$abi-signed.apk \
-              output/ZerotierFix-${{ env.corever }}-$abi.apk
-          done
+          cd ZerotierFix
+          ./gradlew assembleRelease
 
-      - name: Upload artifacts
+      - name: Sign APK
+        id: sign_app
+        run: |
+          echo "${{ secrets.KEYSTORE }}" | base64 -d > keystore.jks
+          apksigner sign \
+            --ks keystore.jks \
+            --ks-key-alias "${{ secrets.KEYSTORE_ALIAS }}" \
+            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.KEY_PASSWORD }}" \
+            app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
           name: ZerotierFix-${{ env.corever }}
-          path: output/*-signed.apk
+          path: ZerotierFix/app/build/outputs/apk/release/app-release.apk
 
   release:
     name: Publish GitHub Release
@@ -88,17 +93,17 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download signed APKs
+      - name: Download signed APK
         uses: actions/download-artifact@v4
         with:
           name: ZerotierFix-${{ needs.build.outputs.corever }}
-      - name: Create Release with Notes
+      - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           generate_release_notes: true
           files: |
-            *.apk
+            app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
