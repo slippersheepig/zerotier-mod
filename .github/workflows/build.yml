@@ -1,73 +1,59 @@
-name: Build & Release APK
+name: build
 
 on:
-  workflow_dispatch: {}
   repository_dispatch:
     types: [build-on-demand]
+  workflow_dispatch:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*.*.*'  # 当推送 vX.Y.Z Tag 时触发发布
 
 jobs:
   build:
-    name: Build & Sign APK
+    name: Build
     runs-on: ubuntu-latest
     outputs:
       corever: ${{ env.corever }}
     steps:
-      - name: Checkout App code
+      - name: Checkout ZeroTierFix
         uses: actions/checkout@v4
         with:
-          repository: kaaass/ZerotierFix
-          path: ZerotierFix
-
-      - name: Checkout build scripts
+          repository: "kaaass/ZerotierFix"
+          path: "ZerotierFix"
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          path: ZerotierFix-Build
-
-      - name: Setup Java JDK 11
-        uses: actions/setup-java@v3
-        with:
-          distribution: temurin
-          java-version: '11'
-          cache: gradle
-
-      - name: Make gradlew executable
-        run: chmod +x ZerotierFix/gradlew
-
-      - name: Fetch ZeroTier core version
-        id: ver
+          path: "ZeroTierFix-Build"
+      - name: Do something
         run: |
-          version=$(curl -s https://api.github.com/repos/zerotier/ZeroTierOne/releases/latest | jq -r '.name')
-          ver=${version//./}
+          export version=$(curl "https://api.github.com/repos/zerotier/ZeroTierOne/releases/latest" | jq -r '.name')
+          export ver=${version//./}
           echo "corever=$ver" >> $GITHUB_ENV
           echo "::set-output name=corever::$ver"
-
-      - name: Patch versionName
-        run: |
           cd ZerotierFix/app
-          sed -r -i "s/versionName \"(.*?)\"/versionName \"\1_${{ env.corever }}\"/g" build.gradle
-
-      - name: Prepare core directory
-        run: |
-          rm -rf ZerotierFix/externals
-          mkdir -p ZerotierFix/externals/core
-      - name: Checkout core source
+          sed -r -i "s/versionName \"(.*?)\"/versionName \"\1_$ver\"/g" build.gradle
+          cd ..
+          rm -rf externals
+          mkdir externals
+      - name: Checkout ZeroTierOne
         uses: actions/checkout@v4
         with:
-          repository: zerotier/ZeroTierOne
-          path: ZerotierFix/externals/core
-          ref: main
-      - name: Replace CMakeLists.txt
+          repository: "zerotier/ZeroTierOne"
+          path: "ZerotierFix/externals/core"
+          ref: "dev"
+      - name: Do something else
         run: |
-          cp ZerotierFix-Build/CMakeLists.txt ZerotierFix/externals/core/java/CMakeLists.txt
-
-      - name: Build Release APK
-        run: |
-          cd ZerotierFix
-          ./gradlew assembleRelease
-
+          cd ZerotierFix/externals/core/java
+          rm CMakeLists.txt
+          cp ../../../../ZeroTierFix-Build/CMakeLists.txt .
+          cd ../../../../
+      - name: Build APK
+        uses: sparkfabrik/android-build-action@v1.5.0
+        with:
+          project-path: ZerotierFix
+          output-path: ZerotierFix-${{ env.corever }}.apk
+          gradle-task: assemble
+          ruby-version: "3.3.0"
       - name: Sign APK
         id: sign_app
         uses: noriban/sign-android-release@v5.1
@@ -76,12 +62,11 @@ jobs:
           signingKeyBase64: ${{ secrets.KEYSTORE }}
           keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
           alias: ${{ secrets.KEYSTORE_ALIAS }}
-
-      - name: Upload signed APK
+      - name: Upload apk
         uses: actions/upload-artifact@v4
         with:
           name: ZerotierFix-${{ env.corever }}
-          path: ZerotierFix/app/build/outputs/apk/release/app-release.apk
+          path: ${{ steps.sign_app.outputs.signedReleaseFile }}
 
   release:
     name: Publish GitHub Release
@@ -91,17 +76,19 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download signed APK
+      - name: Download signed APK artifact
         uses: actions/download-artifact@v4
         with:
           name: ZerotierFix-${{ needs.build.outputs.corever }}
-      - name: Publish Release
+          path: ./output
+
+      - name: Create GitHub Release and upload APK
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           generate_release_notes: true
           files: |
-            app-release.apk
+            output/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
