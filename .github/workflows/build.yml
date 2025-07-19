@@ -70,13 +70,12 @@ jobs:
 
       - name: Sign APK
         id: sign_app
-        run: |
-          echo "${{ secrets.KEYSTORE }}" | base64 -d > keystore.jks
-          apksigner sign \
-            --ks keystore.jks \
-            --ks-key-alias ${{ secrets.KEYSTORE_ALIAS }} \
-            --ks-pass pass ${{ secrets.KEYSTORE_PASSWORD }} \
-            app/build/outputs/apk/release/app-release.apk
+        uses: noriban/sign-android-release@v5.1
+        with:
+          releaseDirectory: .
+          signingKeyBase64: ${{ secrets.KEYSTORE }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          alias: ${{ secrets.KEYSTORE_ALIAS }}
 
       - name: Upload signed APK
         uses: actions/upload-artifact@v4
