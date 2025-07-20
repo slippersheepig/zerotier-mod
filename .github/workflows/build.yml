@@ -4,46 +4,52 @@ on:
   repository_dispatch:
   workflow_dispatch:
   workflow_call:
-  
+
 jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
     outputs:
-      corever: ${{ env.corever }}
+      corever: ${{ steps.set_corever.outputs.corever }}
     steps:
       - name: Checkout ZeroTierFix
         uses: actions/checkout@v4
         with:
           repository: "kaaass/ZerotierFix"
           path: "ZerotierFix"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           path: "ZeroTierFix-Build"
+
       - name: Change Source
+        id: set_corever
         run: |
-          export version=$(curl "https://api.github.com/repos/zerotier/ZeroTierOne/releases/latest" | jq -r '.name')
-          export ver=${version//./}
-          echo "corever=$ver" >> $GITHUB_ENV
-          echo "::set-output name=corever::$ver"
+          version=$(curl -s "https://api.github.com/repos/zerotier/ZeroTierOne/releases/latest" | jq -r '.name')
+          ver=${version//./}
+          echo "corever=$ver" >> "$GITHUB_ENV"
+          echo "corever=$ver" >> "$GITHUB_OUTPUT"
           cd ZerotierFix/app
           sed -r -i "s/versionName \"(.*?)\"/versionName \"\1_$ver\"/g" build.gradle
-          cd ..
+          cd ../
           rm -rf externals
           mkdir externals
+
       - name: Checkout ZeroTierOne
         uses: actions/checkout@v4
         with:
           repository: "zerotier/ZeroTierOne"
           path: "ZerotierFix/externals/core"
           ref: "main"
+
       - name: Fix CMake
         run: |
           cd ZerotierFix/externals/core/java
           rm CMakeLists.txt
           cp ../../../../ZeroTierFix-Build/CMakeLists.txt .
           cd ../../../../
+
       - name: Build APK
         uses: sparkfabrik/android-build-action@v1.5.0
         with:
@@ -51,6 +57,7 @@ jobs:
           output-path: ZerotierFix-${{ env.corever }}.apk
           gradle-task: assemble
           ruby-version: "3.3.0"
+
       - name: Sign APK
         id: sign_app
         uses: noriban/sign-android-release@v5.1
@@ -59,6 +66,7 @@ jobs:
           signingKeyBase64: ${{ secrets.KEYSTORE }}
           keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
           alias: ${{ secrets.KEYSTORE_ALIAS }}
+
       - name: Upload apk
         uses: actions/upload-artifact@v4
         with:
@@ -77,6 +85,7 @@ jobs:
         with:
           name: ZerotierFix-${{ needs.build.outputs.corever }}
           path: ./output
+
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
