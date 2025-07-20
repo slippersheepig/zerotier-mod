@@ -38,5 +38,3 @@ jobs:
     if: needs.detect.outputs.changed == 'true'
     needs: detect
     uses: ./.github/workflows/build.yml
-    with:
-      version: ${{ needs.detect.outputs.latest }}
