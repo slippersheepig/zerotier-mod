@@ -6,36 +6,36 @@ on:
   workflow_dispatch:
 
 jobs:
-  detect:
+  update-version:
     runs-on: ubuntu-latest
-    outputs:
-      latest: ${{ steps.get.outputs.latest }}
-      changed: ${{ steps.check.outputs.changed }}
+
     steps:
-      - uses: actions/checkout@v4
-      - id: get
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 获取最新 release tag
+        id: get_latest
         run: |
-          latest=$(curl -s https://api.github.com/repos/zerotier/ZeroTierOne/releases/latest \
-                   | jq -r '.tag_name')
-          echo "latest=$latest" >> "$GITHUB_OUTPUT"
-      - id: check
+          echo "Fetching latest ZeroTier release..."
+          TAG=$(curl -s https://api.github.com/repos/zerotier/ZeroTierOne/releases/latest \
+            | jq -r .tag_name)
+          echo "Latest tag = $TAG"
+          VERSION=${TAG#v}
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: 写入 LAST_VERSION
         run: |
-          old=$(cat LAST_VERSION 2>/dev/null || echo "")
-          if [ "$old" != "${{ steps.get.outputs.latest }}" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: commit version
-        if: steps.check.outputs.changed == 'true'
+          VERSION=${{ steps.get_latest.outputs.version }}
+          echo "$VERSION" > LAST_VERSION
+
+      - name: 提交更新
         run: |
-          echo "${{ steps.get.outputs.latest }}" > LAST_VERSION
           git config user.name github-actions
           git config user.email actions@github.com
-          git commit -am "Update last ZT version to ${{ steps.get.outputs.latest }}"
+          git add LAST_VERSION
+          git diff --cached --exit-code || git commit -m "Update last ZT version to $VERSION"
           git push
 
-  build:
-    if: needs.detect.outputs.changed == 'true'
-    needs: detect
-    uses: ./.github/workflows/build.yml
+      - name: 通知
+        if: ${{ steps.get_latest.outputs.version != '' }}
+        run: echo "✔️ LAST_VERSION 已更新为 ${{ steps.get_latest.outputs.version }}"
