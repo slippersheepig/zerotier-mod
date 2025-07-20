@@ -3,6 +3,7 @@ name: Build & Release APK
 on:
   repository_dispatch:
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   build:
