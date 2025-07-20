@@ -1,4 +1,4 @@
-name: Check & Build on Release
+name: Check & Trigger Build on Release
 
 on:
   schedule:
@@ -23,19 +23,39 @@ jobs:
           VERSION=${TAG#v}
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: 写入 LAST_VERSION
+      - name: 读取旧版本
+        id: get_old
         run: |
-          VERSION=${{ steps.get_latest.outputs.version }}
-          echo "$VERSION" > LAST_VERSION
+          if [ -f LAST_VERSION ]; then
+            OLD=$(cat LAST_VERSION)
+          else
+            OLD="none"
+          fi
+          echo "old_version=$OLD" >> "$GITHUB_OUTPUT"
 
-      - name: 提交更新
+      - name: 判断是否为新版本
+        id: version_changed
         run: |
+          echo "旧版本: ${{ steps.get_old.outputs.old_version }}，新版本: ${{ steps.get_latest.outputs.version }}"
+          if [ "${{ steps.get_old.outputs.old_version }}" != "${{ steps.get_latest.outputs.version }}" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 更新 LAST_VERSION 并提交
+        if: steps.version_changed.outputs.changed == 'true'
+        run: |
+          echo "${{ steps.get_latest.outputs.version }}" > LAST_VERSION
           git config user.name github-actions
           git config user.email actions@github.com
           git add LAST_VERSION
-          git diff --cached --exit-code || git commit -m "Update last ZT version to $VERSION"
+          git commit -m "Update last ZT version to ${{ steps.get_latest.outputs.version }}"
           git push
 
-      - name: 通知
-        if: ${{ steps.get_latest.outputs.version != '' }}
-        run: echo "✔️ LAST_VERSION 已更新为 ${{ steps.get_latest.outputs.version }}"
+      - name: 触发构建工作流
+        if: steps.version_changed.outputs.changed == 'true'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: trigger-build
