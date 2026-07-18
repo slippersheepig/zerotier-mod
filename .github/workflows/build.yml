@@ -26,8 +26,11 @@ jobs:
       - name: Change Source
         id: set_corever
         run: |
-          version=$(curl -s "https://api.github.com/repos/zerotier/ZeroTierOne/releases/latest" | jq -r '.name')
+          release=$(curl -fsSL "https://api.github.com/repos/zerotier/ZeroTierOne/releases/latest")
+          tag=$(jq -r '.tag_name' <<< "$release")
+          version=${tag#v}
           ver=${version//./}
+          echo "zt_ref=$tag" >> "$GITHUB_OUTPUT"
           echo "corever=$ver" >> "$GITHUB_ENV"
           echo "corever=$ver" >> "$GITHUB_OUTPUT"
           cd ZerotierFix/app
@@ -41,7 +44,22 @@ jobs:
         with:
           repository: "zerotier/ZeroTierOne"
           path: "ZerotierFix/externals/core"
-          ref: "main"
+          ref: ${{ steps.set_corever.outputs.zt_ref }}
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3.0"
+
+      - name: Patch Ruby dependencies
+        run: |
+          cd ZerotierFix
+          if [ -f Gemfile ] && ! grep -q '^[[:space:]]*gem ["'"'"']multi_json["'"'"']' Gemfile; then
+            printf '\n# Required by google-apis-core through representable on Ruby 3.3.\ngem "multi_json"\n' >> Gemfile
+          fi
+          if [ -f Gemfile ]; then
+            bundle update fastlane google-apis-core google-apis-playcustomapp_v1 representable multi_json
+          fi
 
       - name: Fix CMake
         run: |
