@@ -26,8 +26,11 @@ jobs:
       - name: Change Source
         id: set_corever
         run: |
-          version=$(curl -s "https://api.github.com/repos/zerotier/ZeroTierOne/releases/latest" | jq -r '.name')
+          release=$(curl -fsSL "https://api.github.com/repos/zerotier/ZeroTierOne/releases/latest")
+          tag=$(jq -r '.tag_name' <<< "$release")
+          version=${tag#v}
           ver=${version//./}
+          echo "zt_ref=$tag" >> "$GITHUB_OUTPUT"
           echo "corever=$ver" >> "$GITHUB_ENV"
           echo "corever=$ver" >> "$GITHUB_OUTPUT"
           cd ZerotierFix/app
@@ -41,7 +44,16 @@ jobs:
         with:
           repository: "zerotier/ZeroTierOne"
           path: "ZerotierFix/externals/core"
-          ref: "main"
+          ref: ${{ steps.set_corever.outputs.zt_ref }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Fix CMake
         run: |
@@ -51,12 +63,17 @@ jobs:
           cd ../../../../
 
       - name: Build APK
-        uses: sparkfabrik/android-build-action@v1.5.0
-        with:
-          project-path: ZerotierFix
-          output-path: ZerotierFix-${{ env.corever }}.apk
-          gradle-task: assemble
-          ruby-version: "3.3.0"
+        run: |
+          cd ZerotierFix
+          chmod +x ./gradlew
+          ./gradlew assemble --no-daemon
+          cd ..
+          apk=$(find ZerotierFix -path '*/build/outputs/apk/*/*.apk' -type f | head -n 1)
+          if [ -z "$apk" ]; then
+            echo "No APK produced by Gradle" >&2
+            exit 1
+          fi
+          cp "$apk" "ZerotierFix-${{ env.corever }}.apk"
 
       - name: Sign APK
         id: sign_app
