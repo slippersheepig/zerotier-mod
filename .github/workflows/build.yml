@@ -46,20 +46,14 @@ jobs:
           path: "ZerotierFix/externals/core"
           ref: ${{ steps.set_corever.outputs.zt_ref }}
 
-      - name: Setup Ruby
-        uses: ruby/setup-ruby@v1
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          ruby-version: "3.3.0"
+          distribution: "temurin"
+          java-version: "17"
 
-      - name: Patch Ruby dependencies
-        run: |
-          cd ZerotierFix
-          if [ -f Gemfile ] && ! grep -q '^[[:space:]]*gem ["'"'"']multi_json["'"'"']' Gemfile; then
-            printf '\n# Required by google-apis-core through representable on Ruby 3.3.\ngem "multi_json"\n' >> Gemfile
-          fi
-          if [ -f Gemfile ]; then
-            bundle update fastlane google-apis-core google-apis-playcustomapp_v1 representable multi_json
-          fi
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Fix CMake
         run: |
@@ -69,12 +63,17 @@ jobs:
           cd ../../../../
 
       - name: Build APK
-        uses: sparkfabrik/android-build-action@v1.5.0
-        with:
-          project-path: ZerotierFix
-          output-path: ZerotierFix-${{ env.corever }}.apk
-          gradle-task: assemble
-          ruby-version: "3.3.0"
+        run: |
+          cd ZerotierFix
+          chmod +x ./gradlew
+          ./gradlew assemble --no-daemon
+          cd ..
+          apk=$(find ZerotierFix -path '*/build/outputs/apk/*/*.apk' -type f | head -n 1)
+          if [ -z "$apk" ]; then
+            echo "No APK produced by Gradle" >&2
+            exit 1
+          fi
+          cp "$apk" "ZerotierFix-${{ env.corever }}.apk"
 
       - name: Sign APK
         id: sign_app
