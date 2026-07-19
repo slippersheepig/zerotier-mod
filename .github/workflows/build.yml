@@ -85,7 +85,7 @@ jobs:
           alias: ${{ secrets.KEYSTORE_ALIAS }}
 
       - name: Upload apk
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ZerotierFix-${{ env.corever }}
           path: ${{ steps.sign_app.outputs.signedReleaseFile }}
