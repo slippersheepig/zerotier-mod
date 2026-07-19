@@ -13,13 +13,13 @@ jobs:
       corever: ${{ steps.set_corever.outputs.corever }}
     steps:
       - name: Checkout ZeroTierFix
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: "kaaass/ZerotierFix"
           path: "ZerotierFix"
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: "ZeroTierFix-Build"
 
@@ -40,7 +40,7 @@ jobs:
           mkdir externals
 
       - name: Checkout ZeroTierOne
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: "zerotier/ZeroTierOne"
           path: "ZerotierFix/externals/core"
