@@ -4,6 +4,8 @@ on:
   repository_dispatch:
   workflow_dispatch:
   workflow_call:
+  pull_request:
+    branches: ["main"]
 
 jobs:
   build:
